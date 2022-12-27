@@ -1,0 +1,7 @@
+# Terragrunt cache
+**/.terragrunt-cache
+
+# lock files
+**/.terraform.lock.hcl
+
+**/*.swp

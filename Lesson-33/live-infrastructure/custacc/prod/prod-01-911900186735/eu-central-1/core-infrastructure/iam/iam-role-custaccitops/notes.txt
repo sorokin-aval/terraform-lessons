@@ -1,0 +1,4 @@
+tg import aws_iam_role.this[0] CustaccItOps
+tg import aws_iam_instance_profile.this[0] CustaccItOps
+tg import aws_iam_role_policy_attachment.custom[0] CustaccItOps/arn:aws:iam::911900186735:policy/EC2_start_stop_tag
+tg import aws_iam_role_policy_attachment.custom[1] CustaccItOps/arn:aws:iam::aws:policy/ReadOnlyAccess

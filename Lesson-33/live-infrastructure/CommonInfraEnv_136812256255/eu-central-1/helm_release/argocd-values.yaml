@@ -1,0 +1,185 @@
+nameOverride: argocd
+
+global:
+  image:
+    repository: harbor.avalaunch.aval/infra-resources/argocd
+    tag: v2.1.3
+  imagePullSecrets:
+  - name: docker-registry-default-secret
+
+controller:
+  name: application-controller
+  replicas: 1
+  nodeSelector:
+    pool: workers
+  enableStatefulSet: true
+  logLevel: info
+  env:
+    - name: "ARGOCD_CONTROLLER_REPLICAS"
+      value: "1"
+  extraArgs:
+    - --repo-server-timeout-seconds
+    - "600"
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      additionalLabels:
+        app: prometheus-operator
+        release: prometheus-operator
+
+## Dex
+dex:
+  enabled: false
+
+## Redis
+redis:
+  enabled: true
+  name: redis
+  nodeSelector:
+    pool: workers
+  image:
+    repository: harbor.avalaunch.aval/docker-hub-proxy/library/redis
+    tag: 6.2.1-alpine
+    imagePullPolicy: IfNotPresent
+  containerPort: 6379
+  servicePort: 6379
+  priorityClassName: ""
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    runAsNonRoot: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+
+server:
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      additionalLabels:
+        app: prometheus-operator
+        release: prometheus-operator
+  replicas: 1
+  nodeSelector:
+    pool: workers
+  extraArgs:
+    - --insecure
+  logLevel: info
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  ingress:
+    annotations:
+      kubernetes.io/ingress.class: nginx
+    enabled: true
+    hosts:
+      - argo-common.avalaunch.aval
+    paths:
+      - /
+    https: true
+  config:
+    url: https://argo-common.avalaunch.aval
+    users.anonymous.enabled: "true"
+    application.instanceLabelKey: argocd.argoproj.io/instance
+    repositories: |
+      - url: git@gitlab.avalaunch.aval:argocd/infrastructure-manifests.git
+    repository.credentials: |
+      - url: git@code.rbi.tech:raiffeisen
+        sshPrivateKeySecret:
+          name: secret-ssh-auth
+          key: sshPrivateKey
+      - url: git@gitlab.avalaunch.aval:admin-projects
+        sshPrivateKeySecret:
+          name: secret-ssh-auth
+          key: sshPrivateKey
+      - url: git@gitlab.avalaunch.aval:argocd
+        sshPrivateKeySecret:
+          name: secret-ssh-auth
+          key: sshPrivateKey
+    oidc.config: |
+      name: DEX OIDC provider
+      issuer: https://dex.common.avalaunch.aval
+      clientID: argo-workflows-sso-common
+      clientSecret: SlU5K2Zqd2hkaXc3VnoxclIxSjBhQT09
+      requestedScopes: ["openid", "profile", "email", "groups"]
+  additionalApplications:
+  - name: common
+    namespace: kube-system
+    project: cluster-addons
+    source:
+      repoURL: 'git@gitlab.avalaunch.aval:argocd/infrastructure-manifests.git'
+      targetRevision: HEAD
+      path: aws-common
+      directory:
+        recurse: true
+    destination:
+      server: https://kubernetes.default.svc
+      namespace: kube-system
+    syncPolicy:
+      automated:
+        prune: true
+        selfHeal: true
+  additionalProjects:
+  - name: cluster-addons
+    namespace: kube-system
+    description: Cluster addons
+    sourceRepos:
+    - '*'
+    destinations:
+    - namespace: '*'
+      server: https://kubernetes.default.svc
+    clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  rbacConfig:
+    policy.default: role:readonly
+    policy.csv: |
+      g, prod-sre, role:admin
+    # policy.default is the name of the default role which Argo CD will falls back to, when
+    # authorizing API requests (optional). If omitted or empty, users may be still be able to login,
+    # but will see no apps, projects, etc...
+    # policy.default: role:readonly
+
+repoServer:
+  replicas: 1
+  nodeSelector:
+    pool: workers
+  env:
+   - name: "ARGOCD_EXEC_TIMEOUT"
+     value: "300"
+  logLevel: info
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      additionalLabels:
+        app: prometheus-operator
+        release: prometheus-operator
+
+configs:
+  knownHosts:
+    data:
+      ssh_known_hosts: |
+        bitbucket.org ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAubiN81eDcafrgMeLzaFPsw2kNvEcqTKl/VqLat/MaB33pZy0y3rJZtnqwR2qOOvbwKZYKiEO1O6VqNEBxKvJJelCq0dTXWT5pbO2gDXC6h6QDXCaHo6pOHGPUy+YBaGQRGuSusMEASYiWunYN0vCAI8QaXnWMXNMdFP3jHAJH0eDsoiGnLPBlBp4TNm6rYI74nMzgz3B9IikW4WVK+dc8KZJZWYjAuORU3jc1c/NPskD2ASinf8v3xnfXeukU0sJ5N6m5E8VLjObPEO+mN2t/FZTMZLiFqPWc/ALSqnMnnhwrNi2rbfg/rd/IpL8Le3pSBne8+seeFVBoGqzHM9yXw==
+        github.com ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAq2A7hRGmdnm9tUDbO9IDSwBK6TbQa+PXYPCPy6rbTrTtw7PHkccKrpp0yVhp5HdEIcKr6pLlVDBfOLX9QUsyCOV0wzfjIJNlGEYsdlLJizHhbn2mUjvSAHQqZETYP81eFzLQNnPHt4EVVUh7VfDESU84KezmD5QlWpXLmvU31/yMf+Se8xhHTvKSCZIFImWwoG6mbUoWf9nzpIoaSjB+weqqUUmpaaasXVal72J+UX2B+2RPW3RcT0eOzQgqlJL3RKrTJvdsjE3JEAvGq3lGHSZXy28G3skua2SmVi/w4yCE6gbODqnTWlg7+wC604ydGXA8VJiS5ap43JXiUFFAaQ==
+        gitlab.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBFSMqzJeV9rUzU4kWitGjeR4PWSa29SPqJ1fVkhtj3Hw9xjLVXVYrU9QlYWrOLXBpQ6KWjbjTDTdDkoohFzgbEY=
+        gitlab.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAfuCHKVTjquxvt6CM6tdG4SLp1Btn/nOeHHE5UOzRdf
+        gitlab.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCsj2bNKTBSpIYDEGk9KxsGh3mySTRgMtXL583qmBpzeQ+jqCMRgBqB98u3z++J1sKlXHWfM9dyhSevkMwSbhoR8XIq/U0tCNyokEi/ueaBMCvbcTHhO7FcwzY92WK4Yt0aGROY5qX2UKSeOvuP4D6TPqKF1onrSzH9bx9XUf2lEdWT/ia1NEKjunUqu1xOB/StKDHMoX4/OKyIzuS0q/T1zOATthvasJFoPrAjkohTyaDUz2LN5JoH839hViyEG82yB+MjcFV5MU3N1l1QL3cVUCh93xSaua1N85qivl+siMkPGbO5xR/En4iEY6K2XPASUEMaieWVNTRCtJ4S8H+9
+        ssh.dev.azure.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC7Hr1oTWqNqOlzGJOfGJ4NakVyIzf1rXYd4d7wo6jBlkLvCA4odBlL0mDUyZ0/QUfTTqeu+tm22gOsv+VrVTMk6vwRU75gY/y9ut5Mb3bR5BV58dKXyq9A9UeB5Cakehn5Zgm6x1mKoVyf+FFn26iYqXJRgzIZZcZ5V6hrE0Qg39kZm4az48o0AUbf6Sp4SLdvnuMa2sVNwHBboS7EJkm57XQPVU3/QpyNLHbWDdzwtrlS+ez30S3AdYhLKEOxAG8weOnyrtLJAUen9mTkol8oII1edf7mWWbWVf0nBmly21+nZcmCTISQBtdcyPaEno7fFQMDD26/s0lfKob4Kw8H
+        vs-ssh.visualstudio.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC7Hr1oTWqNqOlzGJOfGJ4NakVyIzf1rXYd4d7wo6jBlkLvCA4odBlL0mDUyZ0/QUfTTqeu+tm22gOsv+VrVTMk6vwRU75gY/y9ut5Mb3bR5BV58dKXyq9A9UeB5Cakehn5Zgm6x1mKoVyf+FFn26iYqXJRgzIZZcZ5V6hrE0Qg39kZm4az48o0AUbf6Sp4SLdvnuMa2sVNwHBboS7EJkm57XQPVU3/QpyNLHbWDdzwtrlS+ez30S3AdYhLKEOxAG8weOnyrtLJAUen9mTkol8oII1edf7mWWbWVf0nBmly21+nZcmCTISQBtdcyPaEno7fFQMDD26/s0lfKob4Kw8H
+        gitlab.avalaunch.aval,10.191.32.199 ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBPlG54qYwkQ+zqM2fj+k/bqKTue2tsJsQxBkFRN5Jy/McnJolE0Iw1ht9M/GaiSKtfe2XASRW4EedjQQGpzLi1U=
+        |1|9KdMo+yd/gfKOyikqyZJ50TM23w=|CK3ZP6J8JWlhVtQhMlcppy6/SLE= ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBD7R2EdWmxCcmR7li+7zZ4ovlbr2yXxV+DXlbo3YGXSdodCHeUzapWJKomMqWP6FZNYZXXI5v0nKwesaT2kkm60=
+        |1|WO+lZ3ZRk/hKguPoxM1dfhP7qQA=|jtYbpLwwaQVFT3kUDR6X6Z92+iM= ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBD7R2EdWmxCcmR7li+7zZ4ovlbr2yXxV+DXlbo3YGXSdodCHeUzapWJKomMqWP6FZNYZXXI5v0nKwesaT2kkm60=

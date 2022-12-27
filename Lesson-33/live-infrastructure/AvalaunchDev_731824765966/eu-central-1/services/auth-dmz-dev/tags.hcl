@@ -1,0 +1,15 @@
+locals {
+  Compliance      = "None_playground"
+  Confidentiality = "0"
+  Environment     = "dev"
+  MAPProjectid    = "MPE32598"
+  Name            = "auth-dmz"
+  Owner           = "ITTechnology"
+  Provisioned     = "Terragrunt"
+  compliance      = "None_playground"
+  confidentiality = "0"
+  env             = "dev"
+  environment     = "dev"
+  map-dba         = "d-server-01rcq6ps0osex4"
+  owner           = "Technology"
+}
