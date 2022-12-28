@@ -1,1 +1,0 @@
-1. State is empty, TF plans to create everything
